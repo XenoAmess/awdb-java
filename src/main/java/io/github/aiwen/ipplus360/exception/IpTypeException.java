@@ -1,0 +1,10 @@
+package io.github.aiwen.ipplus360.exception;
+
+/**
+ * IP类型异常类
+ */
+public class IpTypeException extends RuntimeException{
+    public IpTypeException(String message) {
+        super(message);
+    }
+}

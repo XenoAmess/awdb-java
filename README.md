@@ -1,12 +1,12 @@
 # awdb-java
 www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support for parsing Java code in AWDB format )。
 
-# maven 依赖引入示例方法
+# maven 依赖引入示例方法（只是一个示例，需要自己获取代码后打包）
 ```xml
 <dependency>
     <groupId>io.github.aiwen</groupId>
     <artifactId>awdb-java</artifactId>
-    <version>1.0.2</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 

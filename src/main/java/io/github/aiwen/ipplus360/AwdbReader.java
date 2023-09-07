@@ -170,12 +170,12 @@ public class AwdbReader implements Closeable {
 
         String v6 = "6";
         if (v6.equals(ipVersion) && ipAddr instanceof Inet4Address) {
-            throw new IpTypeException(String.format("The database is IPv4 library, but you are using ipv6 queries! The IP is: %s", ipAddr.getHostAddress()));
+            throw new IpTypeException(String.format("The database is IPv6 library, but you are using ipv4 queries! The IP is: %s", ipAddr.getHostAddress()));
         }
 
         String v4 = "4";
         if (v4.equals(ipVersion) && ipAddr instanceof Inet6Address) {
-            throw new IpTypeException(String.format("The database is IPv6 library, but you are using ipv4 queries! The IP is: %s", ipAddr.getHostAddress()));
+            throw new IpTypeException(String.format("The database is IPv4 library, but you are using ipv6 queries! The IP is: %s", ipAddr.getHostAddress()));
         }
 
         String mix = "4_6";

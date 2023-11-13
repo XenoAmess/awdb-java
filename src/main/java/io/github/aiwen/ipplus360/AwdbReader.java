@@ -285,7 +285,7 @@ public class AwdbReader implements Closeable {
 
         // 每个节点由两条记录组成，每条记录都是指向文件中地址的指针。如果记录值大于搜索树中的节点数，则实际指针值指向数据部分
         if (nodeIndex == nodeCount) {
-            return 0;
+            throw new IOException("Invalid node_index in search tree");
         } else if (nodeIndex > nodeCount) {
             return nodeIndex;
         }

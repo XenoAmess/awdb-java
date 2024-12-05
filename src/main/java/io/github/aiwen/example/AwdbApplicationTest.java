@@ -1,3 +1,5 @@
+package io.github.aiwen.example;
+
 import io.github.aiwen.ipplus360.AwdbReader;
 import io.github.aiwen.ipplus360.impl.AwdbCacheImpl;
 import com.fasterxml.jackson.databind.JsonNode;

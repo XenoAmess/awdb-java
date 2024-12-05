@@ -198,6 +198,9 @@ public class AwdbReader implements Closeable {
         }
 
         nodeIndex = findTreeIndex(ipAddr, nodeIndex);
+        if (nodeIndex <= 0) {
+            return new ObjectMapper().createObjectNode();
+        }
 
         int pointer = awdbMetaData.getBaseOffset() + nodeIndex - awdbMetaData.getNodeCount() - 10;
         switch (awdbMetaData.getDecodeType()) {
@@ -285,7 +288,8 @@ public class AwdbReader implements Closeable {
 
         // 每个节点由两条记录组成，每条记录都是指向文件中地址的指针。如果记录值大于搜索树中的节点数，则实际指针值指向数据部分
         if (nodeIndex == nodeCount) {
-            throw new IOException("Invalid node_index in search tree");
+            System.out.println("Invalid node_index in search tree");
+            return 0;
         } else if (nodeIndex > nodeCount) {
             return nodeIndex;
         }

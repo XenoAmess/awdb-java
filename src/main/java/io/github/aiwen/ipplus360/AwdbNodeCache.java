@@ -17,7 +17,7 @@ public interface AwdbNodeCache {
          * @return JsonNode
          * @exception IOException 文件打开或读取失败
          */
-        JsonNode load(int key) throws IOException;
+        JsonNode load(long key) throws IOException;
     }
 
     /**
@@ -28,5 +28,5 @@ public interface AwdbNodeCache {
      * @return JsonNode
      * @exception IOException 文件打开或读取失败
      */
-    JsonNode get(Loader loader, int key) throws IOException;
+    JsonNode get(Loader loader, long key) throws IOException;
 }

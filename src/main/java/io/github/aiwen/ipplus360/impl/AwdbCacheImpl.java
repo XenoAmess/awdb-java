@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class AwdbCacheImpl implements AwdbNodeCache {
     private static final int DEFAULT_CAPACITY = 4096;
-    private final ConcurrentHashMap<Integer, JsonNode> cache;
+    private final ConcurrentHashMap<Long, JsonNode> cache;
 
     public AwdbCacheImpl() {
         this(DEFAULT_CAPACITY);
@@ -22,7 +22,7 @@ public class AwdbCacheImpl implements AwdbNodeCache {
     }
 
     @Override
-    public JsonNode get(Loader loader, int key) throws IOException {
+    public JsonNode get(Loader loader, long key) throws IOException {
         JsonNode value = cache.get(key);
         if (value == null) {
             value = loader.load(key);

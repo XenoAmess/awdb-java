@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.*;
 import io.github.aiwen.ipplus360.entity.AwdbMetaData;
 import io.github.aiwen.ipplus360.enumerate.AwdbDataType;
 import io.github.aiwen.ipplus360.exception.InvalidAwdbException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -21,6 +23,7 @@ import java.util.List;
  * awdb文件数据解析器
  */
 class AwdbDataParser {
+    private static final Logger logger = LoggerFactory.getLogger(AwdbDataParser.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final ByteBuffer buffer;
@@ -29,14 +32,14 @@ class AwdbDataParser {
 
     private final CharsetDecoder strDecoder = StandardCharsets.UTF_8.newDecoder();
 
-    private int basePointer = 0;
+    private long basePointer = 0;
 
     public AwdbDataParser(AwdbNodeCache cache, ByteBuffer buffer) {
         this.cache = cache;
         this.buffer = buffer;
     }
 
-    public AwdbDataParser(AwdbNodeCache cache, ByteBuffer buffer, int basePointer) {
+    public AwdbDataParser(AwdbNodeCache cache, ByteBuffer buffer, long basePointer) {
         this(cache, buffer);
         this.basePointer = basePointer;
     }
@@ -52,6 +55,7 @@ class AwdbDataParser {
     protected AwdbMetaData parseMeta(int length) throws CharacterCodingException {
         int startLen = 2 + length;
         buffer.limit(startLen);
+     //   buffer.position(2); // 跳过前2字节（长度）
         String meta = strDecoder.decode(buffer).toString();
         JSONObject metaJsonObj = JSONObject.parseObject(meta);
         return new AwdbMetaData(metaJsonObj, startLen);
@@ -63,13 +67,13 @@ class AwdbDataParser {
      * @param offset 偏移量
      * @return JsonNode
      */
-    protected JsonNode parseData(int offset) throws IOException {
-        if (offset >= this.buffer.capacity()) {
+    protected JsonNode parseData(long offset) throws IOException {
+        if (offset < 0 || offset >= this.buffer.capacity()) {
             throw new InvalidAwdbException(
-                    "The AWDB file's data section contains bad data: pointer larger than the database.");
+                    "The AWDB file's data section contains bad data: pointer " + offset + " out of bounds [0, " + buffer.capacity() + "]");
         }
 
-        buffer.position(offset);
+        buffer.position((int) offset);
 
         return parser();
     }
@@ -88,6 +92,9 @@ class AwdbDataParser {
 
         // 获取列表长度
         int len = 0xFF & buffer.get();
+
+        // len由buffer.get() & 0xFF得到，范围0-255，不会为负数
+        // 空值（len == 0）是合法的，比如空字符串、空数组，不需要拦截
 
         return parseDataType(dataType, len);
     }
@@ -146,11 +153,33 @@ class AwdbDataParser {
      * @return JsonNode
      */
     private JsonNode parsePointer(int len) throws IOException {
+        // 指针长度至少为1字节
+        if (len <= 0) {
+            logger.warn("解析指针：无效的指针长度 {} 字节", len);
+            return null;
+        }
+
         int oldLimit = buffer.limit();
         buffer.limit(buffer.position() + len);
-        int buf = AwdbDataParser.buffer2Integer(buffer, 0, len);
-        int pointer = basePointer + buf;
+        long buf = AwdbDataParser.buffer2Integer(buffer, 0, len);
         buffer.limit(oldLimit);
+
+        // 先校验偏移量的合理性，避免超大指针
+        if (buf < 0 || buf > buffer.capacity()) {
+            logger.warn("指针偏移量无效: {} (有效范围: [0, {}]), 跳过此数据",
+                    buf, buffer.capacity() - 1);
+            return null;
+        }
+
+        long pointer = basePointer + buf;
+
+        // 验证指针的有效性
+        if (pointer < 0 || pointer >= buffer.capacity()) {
+            logger.warn("指针无效: {} (基指针: {}, 偏移: {}, 有效范围: [0, {}]), 跳过此数据",
+                    pointer, basePointer, buf, buffer.capacity() - 1);
+            return null;
+        }
+
         int position = buffer.position();
         JsonNode jsonNode = cache.get(loader, pointer);
         buffer.position(position);
@@ -182,6 +211,20 @@ class AwdbDataParser {
         buffer.limit(buffer.position() + len);
         int dataLen = AwdbDataParser.buffer2Integer(buffer, 0, len);
         buffer.limit(oldLimit);
+        
+        // 限制字符串最大长度，避免内存溢出
+        final int MAX_TEXT_LENGTH = 100000; // 限制为100KB
+        if (dataLen > MAX_TEXT_LENGTH) {
+            logger.warn("   文本数据过长，限制为{}字节: {}", MAX_TEXT_LENGTH, dataLen);
+            dataLen = MAX_TEXT_LENGTH;
+        }
+        
+        // 确保剩余数据足够
+        if (buffer.position() + dataLen > buffer.limit()) {
+            logger.warn("数据不足，只读取剩余字节");
+            dataLen = buffer.limit() - buffer.position();
+        }
+        
         buffer.limit(buffer.position() + dataLen);
         String s = strDecoder.decode(buffer).toString();
         buffer.limit(oldLimit);

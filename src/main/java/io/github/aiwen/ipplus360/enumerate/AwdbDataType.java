@@ -40,6 +40,10 @@ public enum AwdbDataType {
     private final static AwdbDataType[] VALUES = AwdbDataType.values();
 
     public static AwdbDataType getDataType(int b) {
+        if (b < 1 || b > VALUES.length) {
+            // 对于无效数据类型，返回 null 而不是抛出异常
+            return null;
+        }
         return AwdbDataType.VALUES[b - 1];
     }
 }

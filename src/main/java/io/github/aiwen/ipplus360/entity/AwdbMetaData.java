@@ -12,7 +12,7 @@ public class AwdbMetaData implements Serializable {
     /**
      * 节点总数
      */
-    private int nodeCount;
+    private long nodeCount;
 
     /**
      * IP版本（4,6,4_6）
@@ -52,20 +52,20 @@ public class AwdbMetaData implements Serializable {
     /**
      * 开始长度
      */
-    private int startLength;
+    private long startLength;
 
     /**
      * 开始偏移量
      */
-    private int baseOffset;
+    private long baseOffset;
 
     /**
      * 字段列表
      */
     private JSONArray columns;
 
-    public AwdbMetaData(JSONObject metaJson, int startLen) {
-        this.nodeCount = metaJson.getInteger("node_count");
+    public AwdbMetaData(JSONObject metaJson, long startLen) {
+        this.nodeCount = metaJson.getLong("node_count");
         this.ipVersion = metaJson.getString("ip_version");
         this.decodeType = metaJson.getInteger("decode_type");
         this.byteLen = metaJson.getInteger("byte_len");
@@ -78,11 +78,11 @@ public class AwdbMetaData implements Serializable {
         this.columns = metaJson.getJSONArray("columns");
     }
 
-    public int getNodeCount() {
+    public long getNodeCount() {
         return nodeCount;
     }
 
-    public void setNodeCount(int nodeCount) {
+    public void setNodeCount(long nodeCount) {
         this.nodeCount = nodeCount;
     }
 
@@ -142,19 +142,19 @@ public class AwdbMetaData implements Serializable {
         this.companyId = companyId;
     }
 
-    public int getStartLength() {
+    public long getStartLength() {
         return startLength;
     }
 
-    public void setStartLength(int startLength) {
+    public void setStartLength(long startLength) {
         this.startLength = startLength;
     }
 
-    public int getBaseOffset() {
+    public long getBaseOffset() {
         return baseOffset;
     }
 
-    public void setBaseOffset(int baseOffset) {
+    public void setBaseOffset(long baseOffset) {
         this.baseOffset = baseOffset;
     }
 

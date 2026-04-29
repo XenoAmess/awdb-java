@@ -1,247 +1,333 @@
 package io.github.aiwen.ipplus360;
 
-import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
-import io.github.aiwen.ipplus360.exception.AwdbCloseException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
-import com.googlecode.ipv6.IPv6Address;
-import inet.ipaddr.IPAddressString;
 import io.github.aiwen.ipplus360.entity.AwdbMetaData;
-import io.github.aiwen.ipplus360.exception.IpTypeException;
-import io.github.aiwen.ipplus360.impl.AwdbNoCacheImpl;
+import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
+import io.github.aiwen.ipplus360.exception.AwdbCloseException;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.math.BigInteger;
-import java.net.Inet4Address;
-import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * awdb文件读取器
+ * AWDB 文件读取器
  */
-public class AwdbReader implements Closeable {
-
+public class AwdbReader implements AutoCloseable {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    private final AwdbBufferHolder bufferRef;
+    private final AwdbNodeCache cache;
     private final AwdbMetaData awdbMetaData;
 
-    private final AtomicReference<AwdbBufferHolder> bufferRef;
-
-    private final AwdbNodeCache cache;
-
     /**
-     * 不带缓存的构造器
-     *
-     * @param file awdb文件
-     */
-    public AwdbReader(File file) throws IOException {
-        this(file, AwdbNoCacheImpl.getInstance());
-    }
-
-    /**
-     * 指定缓存的构造器
-     *
-     * @param file  awdb文件
-     * @param cache 缓存实例
-     */
-    public AwdbReader(File file, AwdbNodeCache cache) throws IOException {
-        this(file, cache, FileOpenMode.MEMORY_MAPPED);
-    }
-
-    /**
-     * 指定缓存的构造器
-     *
-     * @param file  awdb文件
-     * @param cache 缓存实例
-     * @param mode  打开文件的模式
-     */
-    public AwdbReader(File file, AwdbNodeCache cache, FileOpenMode mode) throws IOException {
-        this(new AwdbBufferHolder(file, mode), cache);
-    }
-
-    /**
-     * 不带缓存的构造器
-     *
-     * @param source 输入流
-     */
-    public AwdbReader(InputStream source) throws IOException {
-        this(source, AwdbNoCacheImpl.getInstance());
-    }
-
-    /**
-     * 指定缓存的构造器
-     *
-     * @param source 输入流
-     * @param cache  缓存实例
-     */
-    public AwdbReader(InputStream source, AwdbNodeCache cache) throws IOException {
-        this(source, cache, FileOpenMode.MEMORY);
-    }
-
-    /**
-     * 指定缓存的构造器
-     *
-     * @param source 输入流
-     * @param cache  缓存实例
-     * @param mode   打开文件的模式
-     */
-    public AwdbReader(InputStream source, AwdbNodeCache cache, FileOpenMode mode) throws IOException {
-        this(new AwdbBufferHolder(source, mode), cache);
-    }
-
-    /**
-     * 指定缓存的构造器
-     *
-     * @param holder 缓冲器
-     * @param cache  缓存实例
+     * 私有构造函数，供内部使用
      */
     private AwdbReader(AwdbBufferHolder holder, AwdbNodeCache cache) throws IOException {
-        this.bufferRef = new AtomicReference<>(holder);
-
-        if (cache == null) {
-            throw new NullPointerException("cache cannot be null");
-        }
+        this.bufferRef = holder;
         this.cache = cache;
 
-        ByteBuffer buffer = holder.getCurrBuffer();
+        if (holder.isLargeFile()) {
+            // 大文件解析逻辑
+            LargeFileBuffer buffer = holder.getLargeFileBuffer();
+            int metaLen = metaLengthLarge(buffer);
+            AwdbDataParserLarge awdbDataParser = new AwdbDataParserLarge(this.cache, buffer);
+            this.awdbMetaData = awdbDataParser.parseMeta(metaLen);
+        } else {
+            // 小文件解析逻辑 - 使用副本避免共享访问
+            ByteBuffer buffer = holder.getCurrBuffer();
+            int metaLen = metaLength(buffer);
+            AwdbDataParser awdbDataParser = new AwdbDataParser(this.cache, buffer.duplicate());
+            this.awdbMetaData = awdbDataParser.parseMeta(metaLen);
+        }
+    }
 
-        int metaLen = metaLength(buffer);
-        AwdbDataParser awdbDataParser = new AwdbDataParser(this.cache, buffer);
 
-        awdbMetaData = awdbDataParser.parseMeta(metaLen);
+    /**
+     * 创建一个 AwdbReader 实例（完整参数）
+     *
+     * @param file  文件
+     * @param cache 缓存实现
+     * @param mode  文件打开模式
+     * @return AwdbReader
+     * @throws IOException IO异常
+     */
+    public static AwdbReader open(File file, AwdbNodeCache cache, FileOpenMode mode) throws IOException {
+        return new AwdbReader(new AwdbBufferHolder(file, mode), cache);
     }
 
     /**
-     * 读取元数据长度
-     *
-     * @param buffer buffer
-     * @return 元数据长度
+     * 元数据长度
      */
     private int metaLength(ByteBuffer buffer) {
-        return AwdbDataParser.buffer2Integer(buffer, 0, 2);
-    }
-
-    @Override
-    public void close() {
-        bufferRef.set(null);
+        buffer.position(0);
+        return buffer.getChar() & 0xFFFF; // 读取2字节作为长度
     }
 
     /**
-     * 在awdb文件中查找ip地址的位置
-     *
-     * @param ip IP地址字符串
-     * @return ip地址位置
+     * 元数据长度（大文件）
      */
-    public JsonNode findIpLocation(String ip) throws IOException {
-        String dot = ".";
-        String colon = ":";
-        if (ip.contains(dot) || ip.contains(colon)) {
-            return findIpLocation(InetAddress.getByName(ip));
-        } else {
-            BigInteger integerIp = new BigInteger(ip);
-            BigInteger sqrt = BigInteger.valueOf((long) Math.pow(2, 32));
-            if (integerIp.compareTo(sqrt) < 0) {
-                return findIpLocation(InetAddress.getByName(ip));
-            }
-            IPv6Address ipv6 = IPv6Address.fromBigInteger(integerIp);
-            return findIpLocation(ipv6.toInetAddress());
+    private int metaLengthLarge(LargeFileBuffer buffer) {
+        buffer.position(0);
+        return buffer.getChar() & 0xFFFF; // 读取2字节作为长度
+    }
 
+    /**
+     * 查询IP位置信息
+     *
+     * @param ipStr IP地址字符串
+     * @return JSON结果
+     */
+    public JsonNode findIpLocation(String ipStr) throws IOException {
+        if (ipStr == null || ipStr.isEmpty()) {
+            return null;
+        }
+
+        try {
+            InetAddress ipAddr = InetAddress.getByName(ipStr.trim());
+            return findIpLocation(ipAddr);
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+            return null;
         }
     }
 
     /**
-     * 在awdb文件中查找ip地址的位置
+     * 查询IP位置信息
      *
-     * @param ipAddr IP地址
-     * @return ip地址位置
+     * @param ipAddr InetAddress
+     * @return JSON结果
      */
-    private JsonNode findIpLocation(InetAddress ipAddr) throws IOException {
+    public JsonNode findIpLocation(InetAddress ipAddr) throws IOException {
         String ipVersion = awdbMetaData.getIpVersion();
-
-        String v6 = "6";
-        if (v6.equals(ipVersion) && ipAddr instanceof Inet4Address) {
-            throw new IpTypeException(String.format("The database is IPv6 library, but you are using ipv4 queries! The IP is: %s", ipAddr.getHostAddress()));
-        }
-
         String v4 = "4";
-        if (v4.equals(ipVersion) && ipAddr instanceof Inet6Address) {
-            throw new IpTypeException(String.format("The database is IPv4 library, but you are using ipv6 queries! The IP is: %s", ipAddr.getHostAddress()));
+        String v6 = "6";
+        String mix = "4_6";
+
+        if (v4.equals(ipVersion) && ipAddr.getAddress().length == 16) {
+            return OBJECT_MAPPER.createObjectNode();
         }
 
-        String mix = "4_6";
-        int nodeIndex = 0;
+        if (v6.equals(ipVersion) && ipAddr.getAddress().length == 4) {
+            return OBJECT_MAPPER.createObjectNode();
+        }
 
+        long nodeIndex = 0;
+        int startBit = 0;
         if (mix.equals(ipVersion)) {
-
-            if (ipAddr instanceof Inet4Address) {
-                String ipStr = new IPAddressString(ipAddr.getHostAddress()).getAddress().toIPv6().toFullString();
-                ipAddr = InetAddress.getByName(ipStr);
-                BigInteger intIp = IPv6Address.fromString(ipStr).toBigInteger();
-
-                int leftBit = 32;
-                int hex = 0xFFFF;
-
-                if (intIp.shiftRight(leftBit).compareTo(BigInteger.valueOf(hex)) == 0) {
-                    nodeIndex = 96;
+            if (ipAddr.getAddress().length == 4) {
+                // 处理IPv4地址转换
+                String ipv6Str = String.format("::ffff:%s", ipAddr.getHostAddress());
+                try {
+                    ipAddr = InetAddress.getByName(ipv6Str);
+                    // 前96位是固定的，预先计算出对应的节点索引，只需要搜索后面32位
+                    AwdbBufferHolder holder = getBuffer();
+                    long nodeCount = awdbMetaData.getNodeCount();
+                    if (holder.isLargeFile()) {
+                        LargeFileBuffer buffer = holder.getLargeFileBuffer();
+                        // 前80位都是0
+                        for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
+                            nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 0);
+                        }
+                        // 接下来16位都是1
+                        for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
+                            nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 1);
+                        }
+                    } else {
+                        ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+                        // 前80位都是0
+                        for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
+                            nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 0);
+                        }
+                        // 接下来16位都是1
+                        for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
+                            nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 1);
+                        }
+                    }
+                    // 从第96位开始搜索后面的32位
+                    startBit = 96;
+                } catch (UnknownHostException e) {
+                    e.printStackTrace();
+                    return OBJECT_MAPPER.createObjectNode();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    return OBJECT_MAPPER.createObjectNode();
                 }
             }
         }
 
-        nodeIndex = findTreeIndex(ipAddr, nodeIndex);
+
+        nodeIndex = findTreeIndex(ipAddr, nodeIndex, startBit);
         if (nodeIndex <= 0) {
-            return new ObjectMapper().createObjectNode();
+            return OBJECT_MAPPER.createObjectNode();
         }
 
-        int pointer = awdbMetaData.getBaseOffset() + nodeIndex - awdbMetaData.getNodeCount() - 10;
+        long pointer = awdbMetaData.getBaseOffset() + nodeIndex - awdbMetaData.getNodeCount() - 10;
         switch (awdbMetaData.getDecodeType()) {
             case 1:
-                return decodeContentStructure(pointer);
+                JsonNode structureResult = decodeContentStructure(pointer);
+                if (structureResult != null) {
+                    return structureResult;
+                }
+                return OBJECT_MAPPER.createObjectNode();
             case 2:
-                return decodeContentDirect(pointer);
+                try {
+                    return decodeContentDirect(pointer);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.err.println("解码失败，offset=" + pointer + ", 错误: " + e.getMessage());
+                    return OBJECT_MAPPER.createObjectNode();
+                }
             default:
                 return new TextNode("Invalid decode type: " + awdbMetaData.getDecodeType());
         }
     }
 
     /**
-     * 解析awdb内容
-     *
-     * @param offset 偏移量
-     * @return ip地址位置
-     * @throws IOException 打开或读取失败
+     * 查找树形索引
      */
-    private JsonNode decodeContentStructure(int offset) throws IOException {
-        JsonNode valuesJson = parseDataPointer(offset);
+    private long findTreeIndex(InetAddress ipAddr, long nodeIndex, int startBit) throws IOException {
+        AwdbBufferHolder holder = getBuffer();
+        byte[] rawAddr = ipAddr.getAddress();
 
-        return mapKeyValue(awdbMetaData.getColumns(), valuesJson);
+        int bitLength = rawAddr.length * 8;
+        long nodeCount = awdbMetaData.getNodeCount();
+
+        if (holder.isLargeFile()) {
+            LargeFileBuffer buffer = holder.getLargeFileBuffer(); // getLargeFileBuffer() 已自动返回独立副本
+            for (int pl = startBit; pl < bitLength && nodeIndex < nodeCount; pl++) {
+                int b = 0xFF & rawAddr[pl / 8];
+                int bit = 1 & (b >> 7 - (pl % 8));
+                nodeIndex = readNodeIndexLarge(buffer, nodeIndex, bit);
+            }
+        } else {
+            // 使用 ByteBuffer 副本避免共享访问
+            ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+            for (int pl = startBit; pl < bitLength && nodeIndex < nodeCount; pl++) {
+                int b = 0xFF & rawAddr[pl / 8];
+                int bit = 1 & (b >> 7 - (pl % 8));
+                nodeIndex = readNodeIndex(buffer, (int) nodeIndex, bit);
+            }
+        }
+
+        if (nodeIndex == nodeCount) {
+            return 0;
+        } else if (nodeIndex > nodeCount) {
+            return nodeIndex;
+        } else {
+            return 0;
+        }
     }
 
     /**
-     * 数据索引指向内容直接解析，以\t分割
-     *
-     * @param offset 偏移量
-     * @return ip地址位置
-     * @throws IOException 打开或读取失败
+     * 读取节点索引（小文件）
      */
-    private JsonNode decodeContentDirect(int offset) throws IOException {
-        ByteBuffer buffer = getBuffer().getCurrBuffer();
-        int position = buffer.position();
+    private int readNodeIndex(ByteBuffer buffer, int nodeIndex, int bit) {
+        int offset = nodeIndex * awdbMetaData.getByteLen() * 2 + bit * awdbMetaData.getByteLen() + (int) awdbMetaData.getStartLength();
+        // 创建buffer副本，设置offset，不修改原buffer的position，线程安全
+        ByteBuffer bufferCopy = buffer.duplicate();
+        bufferCopy.position(offset);
+        return AwdbDataParser.buffer2Integer(bufferCopy, 0, awdbMetaData.getByteLen());
+    }
+
+    /**
+     * 读取节点索引（大文件）
+     */
+    private long readNodeIndexLarge(LargeFileBuffer buffer, long nodeIndex, int bit) throws IOException {
+        int byteLen = awdbMetaData.getByteLen();
+        long startLength = awdbMetaData.getStartLength();
+        long offset = nodeIndex * byteLen * 2L + bit * byteLen + startLength;
+        if (offset < 0 || offset + byteLen > buffer.capacity()) {
+            throw new IOException("Offset " + offset + " with length " + byteLen + " exceeds buffer capacity " + buffer.capacity());
+        }
+        byte[] bytes = new byte[byteLen];
+        // 绝对位置读取，不需要设置buffer的position，完全线程安全
+        buffer.get(offset, bytes, 0, byteLen);
+
+        long unsignedResult = 0;
+        for (int i = 0; i < bytes.length; i++) {
+            unsignedResult = (unsignedResult << 8) | (bytes[i] & 0xFF);
+        }
+        
+        return unsignedResult;
+    }
+
+    /**
+     * 结构解码
+     */
+    private JsonNode decodeContentStructure(long offset) throws IOException {
+        AwdbBufferHolder holder = getBuffer();
+        try {
+            if (holder.isLargeFile()) {
+                LargeFileBuffer buffer = holder.getLargeFileBuffer(); // getLargeFileBuffer() 已自动返回独立副本
+                AwdbDataParserLarge parser = new AwdbDataParserLarge(cache, buffer, awdbMetaData.getBaseOffset());
+                return parser.parseData(offset);
+            } else {
+                // 使用 ByteBuffer 副本避免共享访问
+                ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+                AwdbDataParser parser = new AwdbDataParser(cache, buffer, awdbMetaData.getBaseOffset());
+                return parser.parseData((int) offset);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            // 捕获并处理解码过程中的异常，避免程序终止
+            System.err.println("解码失败，offset=" + offset + ", 错误: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 直接解码
+     */
+    private JsonNode decodeContentDirect(long offset) throws IOException {
+        AwdbBufferHolder holder = getBuffer();
+        if (holder.isLargeFile()) {
+            return decodeContentDirectLarge(offset, holder.getLargeFileBuffer());
+        } else {
+            return decodeContentDirectSmall(offset, holder.getCurrBuffer());
+        }
+    }
+
+    /**
+     * 直接解码（小文件）
+     */
+    private JsonNode decodeContentDirectSmall(long offset, ByteBuffer buffer) throws IOException {
+        // 使用副本避免共享访问
+        ByteBuffer bufferCopy = buffer.duplicate();
+        bufferCopy.position((int) offset);
+
+        int dataLen = AwdbDataParser.buffer2Integer(bufferCopy, 0, 4);
+        bufferCopy.limit((int) (offset + 4 + dataLen));
+        String[] values = new String(bufferCopy.array(), bufferCopy.position(), dataLen, "UTF-8").split("\t");
+
+        Map<String, JsonNode> result = new HashMap<>(awdbMetaData.getColumns().size());
+        for (int i = 0; i < awdbMetaData.getColumns().size(); i++) {
+            String value = values.length - i > 0 ? values[i] : "";
+            result.put((String) awdbMetaData.getColumns().get(i), new TextNode(value));
+        }
+
+        return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(result));
+    }
+
+    /**
+     * 直接解码（大文件）
+     */
+    private JsonNode decodeContentDirectLarge(long offset, LargeFileBuffer buffer) throws IOException {
+        long position = buffer.position();
         buffer.position(offset);
 
-        int dataLen = AwdbDataParser.buffer2Integer(buffer, 0, 4);
+        byte[] lenBytes = new byte[4];
+        buffer.get(lenBytes);
+        int dataLen = (lenBytes[0] << 24) | ((lenBytes[1] & 0xFF) << 16) | ((lenBytes[2] & 0xFF) << 8) | (lenBytes[3] & 0xFF);
 
-        buffer.limit(offset + 4 + dataLen);
-        String[] values = StandardCharsets.UTF_8.newDecoder().decode(buffer).toString().split("\t");
+        byte[] dataBytes = new byte[dataLen];
+        buffer.get(dataBytes);
+        String[] values = new String(dataBytes, "UTF-8").split("\t");
         buffer.position(position);
 
         Map<String, JsonNode> result = new HashMap<>(awdbMetaData.getColumns().size());
@@ -254,112 +340,32 @@ public class AwdbReader implements Closeable {
     }
 
     /**
-     * 根据数据索引解析数据
-     *
-     * @param offset 偏移量
-     * @return 数据
-     */
-    private JsonNode parseDataPointer(int offset) throws IOException {
-        ByteBuffer buffer = getBuffer().getCurrBuffer();
-
-        AwdbDataParser awdbDataParser = new AwdbDataParser(this.cache, buffer, awdbMetaData.getBaseOffset());
-
-        return awdbDataParser.parseData(offset);
-    }
-
-    /**
-     * 查找数据索引
-     *
-     * @param ipAddress IP地址
-     * @return 索引位置
-     */
-    private int findTreeIndex(InetAddress ipAddress, int nodeIndex) throws IOException {
-        ByteBuffer buffer = getBuffer().getCurrBuffer();
-        byte[] rawAddr = ipAddress.getAddress();
-
-        int bitLength = rawAddr.length * 8;
-        int nodeCount = awdbMetaData.getNodeCount();
-
-        for (int pl = 0; pl < bitLength && nodeIndex < nodeCount; pl++) {
-            int b = 0xFF & rawAddr[pl / 8];
-            int bit = 1 & (b >> 7 - (pl % 8));
-            nodeIndex = readNodeIndex(buffer, nodeIndex, bit);
-        }
-
-        // 每个节点由两条记录组成，每条记录都是指向文件中地址的指针。如果记录值大于搜索树中的节点数，则实际指针值指向数据部分
-        if (nodeIndex == nodeCount) {
-            System.out.println("Invalid node_index in search tree");
-            return 0;
-        } else if (nodeIndex > nodeCount) {
-            return nodeIndex;
-        }
-
-        throw new IOException("Invalid node_index in search tree");
-    }
-
-    /**
-     * 查找索引位置
-     *
-     * @param buffer    数据
-     * @param nodeIndex 节点索引
-     * @param bit       二进制位
-     * @return 索引位置
-     */
-    private int readNodeIndex(ByteBuffer buffer, int nodeIndex, int bit) {
-        int offset = nodeIndex * awdbMetaData.getByteLen() * 2 + bit * awdbMetaData.getByteLen() + awdbMetaData.getStartLength();
-        buffer.position(offset);
-        return AwdbDataParser.buffer2Integer(buffer, 0, awdbMetaData.getByteLen());
-    }
-
-    /**
-     * 获取buffer
-     *
-     * @return AwdbBufferHolder
+     * 获取缓冲区
      */
     private AwdbBufferHolder getBuffer() throws AwdbCloseException {
-        AwdbBufferHolder awdbBufferHolder = bufferRef.get();
-        if (awdbBufferHolder == null) {
+        if (bufferRef == null) {
             throw new AwdbCloseException();
         }
-        return awdbBufferHolder;
+        return bufferRef;
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (bufferRef != null) {
+            bufferRef.close();
+        }
     }
 
     /**
-     * key和value映射
-     *
-     * @param keys   key列表
-     * @param values value列表
-     * @return JsonNode对象
+     * 获取AWDB文件的元数据
      */
-    private JsonNode mapKeyValue(List<Object> keys, JsonNode values) {
-        Map<String, JsonNode> resultDict = new HashMap<>(keys.size());
+    public AwdbMetaData getAwdbMetaData() {
+        return awdbMetaData;
+    }
 
-        if (keys.size() == values.size()) {
-            for (int i = 0; i < keys.size(); i++) {
-                resultDict.put((String) keys.get(i), values.get(i));
-            }
-        } else {
-            for (int i = 0; i < values.size() - 1; i++) {
-                resultDict.put((String) keys.get(i), values.get(i));
-            }
-
-            String multiAreasName = (String) keys.get(keys.size() - 2);
-            List<?> keysList = (List<?>) keys.get(keys.size() - 1);
-            JsonNode valuesJsonNode = values.get(values.size() - 1);
-
-            ArrayNode nodes = new ArrayNode(OBJECT_MAPPER.getNodeFactory());
-            for (JsonNode value : valuesJsonNode) {
-                Map<String, JsonNode> tempDic = new HashMap<>(keysList.size());
-
-                for (int i = 0; i < keysList.size(); i++) {
-                    tempDic.put((String) keysList.get(i), value.get(i));
-                }
-                nodes.add(new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(tempDic)));
-            }
-            resultDict.put(multiAreasName, nodes);
-        }
-
-
-        return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(resultDict));
+    @Override
+    protected void finalize() throws Throwable {
+        close();
+        super.finalize();
     }
 }

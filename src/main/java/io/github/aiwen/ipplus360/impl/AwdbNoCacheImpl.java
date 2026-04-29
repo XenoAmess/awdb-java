@@ -14,7 +14,7 @@ public class AwdbNoCacheImpl implements AwdbNodeCache {
     }
 
     @Override
-    public JsonNode get(Loader loader, int key) throws IOException {
+    public JsonNode get(Loader loader, long key) throws IOException {
         return loader.load(key);
     }
 

@@ -1,9 +1,10 @@
 package io.github.aiwen.example;
 
-import io.github.aiwen.ipplus360.AwdbReader;
-import io.github.aiwen.ipplus360.impl.AwdbCacheImpl;
-import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.aiwen.ipplus360.AwdbReader;
+import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
+import io.github.aiwen.ipplus360.impl.AwdbCacheImpl;
 
 import java.io.File;
 import java.io.IOException;
@@ -12,6 +13,8 @@ import java.io.IOException;
  * 测试类
  */
 public class AwdbApplicationTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static void main(String[] args) throws IOException {
         String ip = "202.96.128.86";
@@ -22,7 +25,6 @@ public class AwdbApplicationTest {
             JsonNode record = reader.findIpLocation(ip);
             System.out.println(record);
         }
-
     }
 
 

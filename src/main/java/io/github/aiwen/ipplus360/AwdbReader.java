@@ -2,6 +2,7 @@ package io.github.aiwen.ipplus360;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.aiwen.ipplus360.entity.AwdbMetaData;
@@ -90,7 +91,8 @@ public class AwdbReader implements AutoCloseable {
 
         try {
             InetAddress ipAddr = InetAddress.getByName(ipStr.trim());
-            return findIpLocation(ipAddr);
+            JsonNode valuesJson = findIpLocation(ipAddr);
+            return mapKeyValue(awdbMetaData.getColumns(), valuesJson);
         } catch (UnknownHostException e) {
             e.printStackTrace();
             return null;
@@ -348,6 +350,46 @@ public class AwdbReader implements AutoCloseable {
         }
         return bufferRef;
     }
+
+    /**
+     * key和value映射
+     *
+     * @param keys   key列表
+     * @param values value列表
+     * @return JsonNode对象
+     */
+    private JsonNode mapKeyValue(List<Object> keys, JsonNode values) {
+        Map<String, JsonNode> resultDict = new HashMap<>(keys.size());
+
+        if (keys.size() == values.size()) {
+            for (int i = 0; i < keys.size(); i++) {
+                resultDict.put((String) keys.get(i), values.get(i));
+            }
+        } else {
+            for (int i = 0; i < values.size() - 1; i++) {
+                resultDict.put((String) keys.get(i), values.get(i));
+            }
+
+            String multiAreasName = (String) keys.get(keys.size() - 2);
+            List<?> keysList = (List<?>) keys.get(keys.size() - 1);
+            JsonNode valuesJsonNode = values.get(values.size() - 1);
+
+            ArrayNode nodes = new ArrayNode(OBJECT_MAPPER.getNodeFactory());
+            for (JsonNode value : valuesJsonNode) {
+                Map<String, JsonNode> tempDic = new HashMap<>(keysList.size());
+
+                for (int i = 0; i < keysList.size(); i++) {
+                    tempDic.put((String) keysList.get(i), value.get(i));
+                }
+                nodes.add(new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(tempDic)));
+            }
+            resultDict.put(multiAreasName, nodes);
+        }
+
+        return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(resultDict));
+    }
+
+
 
     @Override
     public void close() throws IOException {

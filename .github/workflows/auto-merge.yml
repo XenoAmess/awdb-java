@@ -19,6 +19,8 @@ jobs:
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+          # v3 默认校验 dependabot 提交签名，未签名会失败（Pitfall 19）
+          skip-commit-verification: true
 
       - name: Check if auto-merge applicable
         id: check

@@ -1,6 +1,5 @@
 package com.xenoamess.ipplus360;
 
-import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
@@ -53,7 +52,7 @@ class AwdbDataParserLarge {
      * @param length 元数据长度
      * @return 元数据
      */
-    protected AwdbMetaData parseMeta(int length) throws CharacterCodingException {
+    protected AwdbMetaData parseMeta(int length) throws IOException {
         // 根据实际文件结构，元数据应该从偏移量2开始（因为前2字节是长度）
         long startLen = 2 + length;
         long oldLimit = buffer.limit();
@@ -64,10 +63,8 @@ class AwdbDataParserLarge {
         buffer.get(metaBytes);
         buffer.limit(oldLimit);
 
-        
         String meta = new String(metaBytes, StandardCharsets.UTF_8);
-
-        JSONObject metaJsonObj = JSONObject.parseObject(meta);
+        JsonNode metaJsonObj = OBJECT_MAPPER.readTree(meta);
         return new AwdbMetaData(metaJsonObj, startLen);
     }
 

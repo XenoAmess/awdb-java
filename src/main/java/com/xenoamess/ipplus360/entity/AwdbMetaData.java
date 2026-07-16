@@ -1,14 +1,18 @@
 package com.xenoamess.ipplus360.entity;
 
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * awdb 文件元数据
  */
 public class AwdbMetaData implements Serializable {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     /**
      * 节点总数
      */
@@ -60,22 +64,23 @@ public class AwdbMetaData implements Serializable {
     private long baseOffset;
 
     /**
-     * 字段列表
+     * 字段列表（元素为 String；multiAreas 场景下最后一项为子字段名 List&lt;String&gt;）
      */
-    private JSONArray columns;
+    private List<Object> columns;
 
-    public AwdbMetaData(JSONObject metaJson, long startLen) {
-        this.nodeCount = metaJson.getLong("node_count");
-        this.ipVersion = metaJson.getString("ip_version");
-        this.decodeType = metaJson.getInteger("decode_type");
-        this.byteLen = metaJson.getInteger("byte_len");
-        this.languages = metaJson.getString("languages");
-        this.fileName = metaJson.getString("file_name");
-        this.createTime = metaJson.getString("create_time");
-        this.companyId = metaJson.getString("company_id");
+    public AwdbMetaData(JsonNode metaJson, long startLen) {
+        this.nodeCount = metaJson.path("node_count").asLong();
+        this.ipVersion = metaJson.path("ip_version").asText();
+        this.decodeType = metaJson.path("decode_type").asInt();
+        this.byteLen = metaJson.path("byte_len").asInt();
+        this.languages = metaJson.path("languages").asText();
+        this.fileName = metaJson.path("file_name").asText();
+        this.createTime = metaJson.path("create_time").asText();
+        this.companyId = metaJson.path("company_id").asText();
         this.startLength = startLen;
         this.baseOffset = nodeCount * byteLen * 2 + startLen;
-        this.columns = metaJson.getJSONArray("columns");
+        this.columns = OBJECT_MAPPER.convertValue(metaJson.required("columns"), new TypeReference<List<Object>>() {
+        });
     }
 
     public long getNodeCount() {
@@ -158,11 +163,11 @@ public class AwdbMetaData implements Serializable {
         this.baseOffset = baseOffset;
     }
 
-    public JSONArray getColumns() {
+    public List<Object> getColumns() {
         return columns;
     }
 
-    public void setColumns(JSONArray columns) {
+    public void setColumns(List<Object> columns) {
         this.columns = columns;
     }
 }

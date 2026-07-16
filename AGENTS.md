@@ -10,6 +10,9 @@
 - Tests: `mvn test` (JUnit 5). Fixtures are synthetic files solidified at `src/test/resources/test_20260717*.awdb`, produced by `com.xenoamess.ipplus360.fixture.AwdbTestFixture#main` — they encode the format as the code implements it, NOT verified against a real official .awdb (none is publicly available).
 - No lint/typecheck config exists in this repo — don't invent commands for them.
 - CI: `.github/workflows/build.yml` runs `mvn package` (which includes tests) on a JDK 8/11/25 matrix (temurin) and uploads the jar as an artifact.
+- `.github/workflows/auto-merge.yml` approves + auto-merges dependabot PRs (patch/minor always, major only for github-actions). MYTOKEN lives in the **dependabot** secret namespace, not actions (Pitfall 16).
+- Branch protection on master: required checks `build (8)`, `build (11)`, `build (25)` + `strict: true` + linear history. Changing the JDK matrix renames those checks — update protection in the same change or every PR gets stuck. Merge PRs with `--rebase`/`--squash`, never `--merge`.
+- dependabot.yml must NOT contain a `groups:` block (per dependabot-automerge-skill Pitfall 13: grouped PRs make CI failures un-attributable). One PR per dependency per cycle; logback pinned to 1.3.x and junit to 5.x via `ignore` (Java 8 constraint).
 
 ## Known issues (intentionally left)
 - The small-file parser (`AwdbDataParser`) and large-file parser (`AwdbDataParserLarge`) still have behavior drift (e.g. TEXT length cap, `buffer2Long` returning -1 on error, null-on-error vs throw). Fixing requires a merge that was explicitly postponed.

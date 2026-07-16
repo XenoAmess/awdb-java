@@ -1,4 +1,8 @@
 # awdb-java
+
+> 本项目 fork 自 https://gitee.com/aiwen_home/awdb-java ，尊重原版版权 & License。
+> This project is forked from https://gitee.com/aiwen_home/awdb-java . All rights of the original project are reserved to the original author, and the original copyright & license are respected.
+
 www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support for parsing Java code in AWDB format )。
 
 # maven 依赖引入示例方法（只是一个示例，需要自己获取代码后打包）

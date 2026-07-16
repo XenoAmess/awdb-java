@@ -4,6 +4,7 @@ import com.xenoamess.ipplus360.AwdbNodeCache;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -23,11 +24,17 @@ public class AwdbCacheImpl implements AwdbNodeCache {
 
     @Override
     public JsonNode get(Loader loader, long key) throws IOException {
-        JsonNode value = cache.get(key);
-        if (value == null) {
-            value = loader.load(key);
-            cache.put(key, value);
+        try {
+            // loader 返回 null 时不缓存（ConcurrentHashMap 不允许 null 值）
+            return cache.computeIfAbsent(key, k -> {
+                try {
+                    return loader.load(k);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
-        return value;
     }
 }

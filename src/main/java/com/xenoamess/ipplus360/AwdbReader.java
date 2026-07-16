@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import com.xenoamess.ipplus360.entity.AwdbMetaData;
 import com.xenoamess.ipplus360.enumerate.FileOpenMode;
 import com.xenoamess.ipplus360.exception.AwdbCloseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,6 +22,7 @@ import java.util.*;
  * AWDB 文件读取器
  */
 public class AwdbReader implements AutoCloseable {
+    private static final Logger logger = LoggerFactory.getLogger(AwdbReader.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final AwdbBufferHolder bufferRef;
@@ -92,9 +95,13 @@ public class AwdbReader implements AutoCloseable {
         try {
             InetAddress ipAddr = InetAddress.getByName(ipStr.trim());
             JsonNode valuesJson = findIpLocation(ipAddr);
+            // 仅原始数组结果需要做 key-value 映射；空节点、decodeType=2 已映射的对象直接返回
+            if (valuesJson == null || !valuesJson.isArray()) {
+                return valuesJson;
+            }
             return mapKeyValue(awdbMetaData.getColumns(), valuesJson);
         } catch (UnknownHostException e) {
-            e.printStackTrace();
+            logger.warn("无法解析的IP地址: {}", ipStr, e);
             return null;
         }
     }
@@ -154,10 +161,10 @@ public class AwdbReader implements AutoCloseable {
                     // 从第96位开始搜索后面的32位
                     startBit = 96;
                 } catch (UnknownHostException e) {
-                    e.printStackTrace();
+                    logger.warn("IPv4-mapped地址转换失败: {}", ipAddr, e);
                     return OBJECT_MAPPER.createObjectNode();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    logger.warn("读取节点索引失败", e);
                     return OBJECT_MAPPER.createObjectNode();
                 }
             }
@@ -181,8 +188,7 @@ public class AwdbReader implements AutoCloseable {
                 try {
                     return decodeContentDirect(pointer);
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    System.err.println("解码失败，offset=" + pointer + ", 错误: " + e.getMessage());
+                    logger.warn("解码失败，offset={}", pointer, e);
                     return OBJECT_MAPPER.createObjectNode();
                 }
             default:
@@ -276,9 +282,7 @@ public class AwdbReader implements AutoCloseable {
                 return parser.parseData((int) offset);
             }
         } catch (Exception e) {
-            e.printStackTrace();
-            // 捕获并处理解码过程中的异常，避免程序终止
-            System.err.println("解码失败，offset=" + offset + ", 错误: " + e.getMessage());
+            logger.warn("解码失败，offset={}", offset, e);
             return null;
         }
     }
@@ -299,13 +303,14 @@ public class AwdbReader implements AutoCloseable {
      * 直接解码（小文件）
      */
     private JsonNode decodeContentDirectSmall(long offset, ByteBuffer buffer) throws IOException {
-        // 使用副本避免共享访问
+        // 使用副本做顺序读取，兼容无底层数组的 MappedByteBuffer
         ByteBuffer bufferCopy = buffer.duplicate();
         bufferCopy.position((int) offset);
 
         int dataLen = AwdbDataParser.buffer2Integer(bufferCopy, 0, 4);
-        bufferCopy.limit((int) (offset + 4 + dataLen));
-        String[] values = new String(bufferCopy.array(), bufferCopy.position(), dataLen, "UTF-8").split("\t");
+        byte[] data = new byte[dataLen];
+        bufferCopy.get(data);
+        String[] values = new String(data, "UTF-8").split("\t");
 
         Map<String, JsonNode> result = new HashMap<>(awdbMetaData.getColumns().size());
         for (int i = 0; i < awdbMetaData.getColumns().size(); i++) {
@@ -403,11 +408,5 @@ public class AwdbReader implements AutoCloseable {
      */
     public AwdbMetaData getAwdbMetaData() {
         return awdbMetaData;
-    }
-
-    @Override
-    protected void finalize() throws Throwable {
-        close();
-        super.finalize();
     }
 }

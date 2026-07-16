@@ -6,7 +6,6 @@ import com.xenoamess.ipplus360.enumerate.FileOpenMode;
 import com.xenoamess.ipplus360.fixture.AwdbTestFixture;
 import com.xenoamess.ipplus360.impl.AwdbCacheImpl;
 import com.xenoamess.ipplus360.impl.AwdbNoCacheImpl;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -94,7 +93,6 @@ class AwdbReaderTest {
     }
 
     @Test
-    @Disabled("Bug A: findIpLocation(String) 对未命中结果无条件 mapKeyValue 导致 CCE/NPE，待 P1 修复")
     void structuredNotFoundReturnsEmptyNode() throws IOException {
         // 64.x -> node1 bit1=1 -> nodeCount; 128.x -> node2 bit1=0 -> nodeCount
         assertEquals(0, lookup(AwdbTestFixture.STRUCTURED_FILE, FileOpenMode.MEMORY, "64.0.0.1").size());
@@ -139,7 +137,6 @@ class AwdbReaderTest {
     }
 
     @Test
-    @Disabled("Bug B: decodeType=2 结果被 decodeContentDirect 映射后又被 String API 二次 mapKeyValue 成全 null，待 P1 修复")
     void directLookupMemory() throws IOException {
         assertDirectSample(lookup(AwdbTestFixture.DIRECT_FILE, FileOpenMode.MEMORY, "202.96.128.86"));
         JsonNode node = lookup(AwdbTestFixture.DIRECT_FILE, FileOpenMode.MEMORY, "1.2.3.4");
@@ -148,7 +145,6 @@ class AwdbReaderTest {
     }
 
     @Test
-    @Disabled("MEMORY_MAPPED 下 decodeContentDirectSmall 调用 MappedByteBuffer.array() 必抛异常，待 P1 修复后启用")
     void directLookupMemoryMapped() throws IOException {
         assertDirectSample(lookup(AwdbTestFixture.DIRECT_FILE, FileOpenMode.MEMORY_MAPPED, "202.96.128.86"));
     }
@@ -156,7 +152,6 @@ class AwdbReaderTest {
     /* ---------------- IPv6 ---------------- */
 
     @Test
-    @Disabled("Bug B: decodeType=2 结果被 decodeContentDirect 映射后又被 String API 二次 mapKeyValue 成全 null，待 P1 修复")
     void ipv6Lookup() throws IOException {
         JsonNode node = lookup(AwdbTestFixture.V6_FILE, FileOpenMode.MEMORY, "::1");
         assertEquals("中国", node.get("country").asText());
@@ -165,13 +160,11 @@ class AwdbReaderTest {
     }
 
     @Test
-    @Disabled("Bug A: findIpLocation(String) 对未命中结果无条件 mapKeyValue 导致 CCE/NPE，待 P1 修复")
     void ipv6NotFoundReturnsEmptyNode() throws IOException {
         assertEquals(0, lookup(AwdbTestFixture.V6_FILE, FileOpenMode.MEMORY, "8001::1").size());
     }
 
     @Test
-    @Disabled("Bug A: findIpLocation(String) 对版本不匹配返回的空节点仍走 mapKeyValue 导致 CCE，待 P1 修复")
     void ipv4RejectedByV6File() throws IOException {
         // ip_version=6 的文件查询 IPv4 应返回空节点
         assertEquals(0, lookup(AwdbTestFixture.V6_FILE, FileOpenMode.MEMORY, "1.2.3.4").size());

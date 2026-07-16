@@ -89,6 +89,9 @@ class AwdbDataParser {
 
         // awdb数据类型
         AwdbDataType dataType = AwdbDataType.getDataType(typeByte);
+        if (dataType == null) {
+            throw new InvalidAwdbException("Unknown data type byte: " + typeByte);
+        }
 
         // 获取列表长度
         int len = 0xFF & buffer.get();

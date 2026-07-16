@@ -103,9 +103,9 @@ class AwdbDataParserLarge {
         
         int typeByte = buffer.get() & 0xFF;
         AwdbDataType dataType = AwdbDataType.getDataType(typeByte);
-        
+
         if (dataType == null) {
-            return null;
+            throw new InvalidAwdbException("Unknown data type byte: " + typeByte);
         }
         
         int len = buffer.get() & 0xFF;

@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360;
+package com.xenoamess.ipplus360;
 
 import com.fasterxml.jackson.databind.JsonNode;
 

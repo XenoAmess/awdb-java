@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360.entity;
+package com.xenoamess.ipplus360.entity;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;

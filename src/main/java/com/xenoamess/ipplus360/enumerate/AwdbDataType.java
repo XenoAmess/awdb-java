@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360.enumerate;
+package com.xenoamess.ipplus360.enumerate;
 
 /**
  * awdb数据类型

@@ -1,6 +1,6 @@
-package io.github.aiwen.ipplus360.impl;
+package com.xenoamess.ipplus360.impl;
 
-import io.github.aiwen.ipplus360.AwdbNodeCache;
+import com.xenoamess.ipplus360.AwdbNodeCache;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;

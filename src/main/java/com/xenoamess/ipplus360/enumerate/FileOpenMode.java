@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360.enumerate;
+package com.xenoamess.ipplus360.enumerate;
 
 /**
  * 打开awdb时使用的文件模式

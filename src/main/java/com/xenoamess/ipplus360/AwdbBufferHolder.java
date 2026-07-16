@@ -1,6 +1,6 @@
-package io.github.aiwen.ipplus360;
+package com.xenoamess.ipplus360;
 
-import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
+import com.xenoamess.ipplus360.enumerate.FileOpenMode;
 
 import java.io.*;
 import java.nio.ByteBuffer;

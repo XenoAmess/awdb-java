@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360;
+package com.xenoamess.ipplus360;
 
 import java.io.IOException;
 import java.nio.MappedByteBuffer;

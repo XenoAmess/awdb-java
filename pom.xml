@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.aiwen</groupId>
+    <groupId>com.xenoamess</groupId>
     <artifactId>awdb-java</artifactId>
     <version>2.0.0</version>
     <description>parsing Java code in AWDB format</description>
@@ -114,7 +114,7 @@
                             </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.github.aiwen.example.AwdbCommandRunner</mainClass>
+                                    <mainClass>com.xenoamess.example.AwdbApplicationTest</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

@@ -1,4 +1,4 @@
-package io.github.aiwen.ipplus360.exception;
+package com.xenoamess.ipplus360.exception;
 
 /**
  * IP类型异常类

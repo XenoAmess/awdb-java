@@ -8,7 +8,7 @@ www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support 
 # maven 依赖引入示例方法（只是一个示例，需要自己获取代码后打包）
 ```xml
 <dependency>
-    <groupId>io.github.aiwen</groupId>
+    <groupId>com.xenoamess</groupId>
     <artifactId>awdb-java</artifactId>
     <version>2.0.0</version>
 </dependency>
@@ -17,11 +17,11 @@ www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support 
 * 代码具体调用示例
 
 ```java
-package io.github.aiwen.example;
+package com.xenoamess.example;
 
-import io.github.aiwen.ipplus360.AwdbReader;
-import io.github.aiwen.ipplus360.impl.AwdbCacheImpl;
-import io.github.aiwen.ipplus360.enumerate.FileOpenMode;
+import com.xenoamess.ipplus360.AwdbReader;
+import com.xenoamess.ipplus360.impl.AwdbCacheImpl;
+import com.xenoamess.ipplus360.enumerate.FileOpenMode;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.File;

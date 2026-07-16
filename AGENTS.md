@@ -6,7 +6,8 @@
 
 ## Build & verify
 - Java 8 target. Build: `mvn package` (shade plugin produces a fat jar). Compile check: `mvn compile`.
-- No tests, no CI, no lint/typecheck config exist in this repo — don't invent commands for them.
+- No tests and no lint/typecheck config exist in this repo — don't invent commands for them.
+- CI: `.github/workflows/build.yml` runs `mvn package` on a JDK 8/11/17/21 matrix (temurin) and uploads the shaded jar as an artifact.
 
 ## Conventions
 - Package root is `com.xenoamess.*` (groupId `com.xenoamess`); the fork was re-branded from upstream's `io.github.aiwen.*`.

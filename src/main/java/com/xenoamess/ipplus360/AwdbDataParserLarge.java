@@ -11,10 +11,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -128,13 +126,13 @@ class AwdbDataParserLarge {
             case TEXT:
                 return parseText(len);
             case INT:
-                return parseInt();
+                return parseInt(len);
             case UINT:
                 return parseUint(len);
             case FLOAT:
-                return parseFloat();
+                return parseFloat(len);
             case DOUBLE:
-                return parseDouble();
+                return parseDouble(len);
             default:
                 throw new InvalidAwdbException("Unknown or unexpected type: " + type.name());
         }
@@ -302,33 +300,43 @@ class AwdbDataParserLarge {
     }
 
     /**
-     * 解析有符号整型
+     * 解析有符号整型。INT/FLOAT/DOUBLE 的 len 字节实际是首个数据字节，
+     * 其后再读 3 字节，共 4 字节大端。
      *
+     * @param firstByte 首个数据字节（即控制区的 len 字节）
      * @return 有符号整型
      */
-    private JsonNode parseInt() {
-        buffer.position(buffer.position() - 1);
-        return new IntNode(buffer2Integer(4));
+    private JsonNode parseInt(int firstByte) {
+        int value = ((firstByte & 0xFF) << 24)
+                | ((buffer.get() & 0xFF) << 16)
+                | ((buffer.get() & 0xFF) << 8)
+                | (buffer.get() & 0xFF);
+        return new IntNode(value);
     }
 
     /**
-     * 解析double类型的数据
+     * 解析double类型的数据。len 字节是 8 字节大端位模式的首字节。
      *
+     * @param firstByte 首个数据字节（即控制区的 len 字节）
      * @return double类型数据
      */
-    private JsonNode parseDouble() {
-        buffer.position(buffer.position() - 1);
-        return new DoubleNode(buffer.getDouble());
+    private JsonNode parseDouble(int firstByte) {
+        long bits = ((long) (firstByte & 0xFF) << 56) | buffer2Long(7);
+        return new DoubleNode(Double.longBitsToDouble(bits));
     }
 
     /**
-     * 解析float类型的数据
+     * 解析float类型的数据。len 字节是 4 字节大端位模式的首字节。
      *
+     * @param firstByte 首个数据字节（即控制区的 len 字节）
      * @return float类型数据
      */
-    private JsonNode parseFloat() {
-        buffer.position(buffer.position() - 1);
-        return new FloatNode(buffer.getFloat());
+    private JsonNode parseFloat(int firstByte) {
+        int bits = ((firstByte & 0xFF) << 24)
+                | ((buffer.get() & 0xFF) << 16)
+                | ((buffer.get() & 0xFF) << 8)
+                | (buffer.get() & 0xFF);
+        return new FloatNode(Float.intBitsToFloat(bits));
     }
 
     /**

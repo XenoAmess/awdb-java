@@ -44,7 +44,7 @@ public class AwdbReader implements AutoCloseable {
             this.awdbMetaData = awdbDataParser.parseMeta(metaLen);
         } else {
             // 小文件解析逻辑 - 使用副本避免共享访问
-            ByteBuffer buffer = holder.getCurrBuffer();
+            ByteBuffer buffer = holder.getByteBuffer();
             int metaLen = metaLength(buffer);
             AwdbDataParser awdbDataParser = new AwdbDataParser(this.cache, buffer.duplicate());
             this.awdbMetaData = awdbDataParser.parseMeta(metaLen);
@@ -130,10 +130,15 @@ public class AwdbReader implements AutoCloseable {
         int startBit = 0;
         if (mix.equals(ipVersion)) {
             if (ipAddr.getAddress().length == 4) {
-                // 处理IPv4地址转换
-                String ipv6Str = String.format("::ffff:%s", ipAddr.getHostAddress());
+                // 处理IPv4地址转换：显式构造 ::ffff:a.b.c.d 的16字节形式，
+                // 避免文本形式被 JDK 归一化回 Inet4Address
                 try {
-                    ipAddr = InetAddress.getByName(ipv6Str);
+                    byte[] v4bytes = ipAddr.getAddress();
+                    byte[] v6mapped = new byte[16];
+                    v6mapped[10] = (byte) 0xFF;
+                    v6mapped[11] = (byte) 0xFF;
+                    System.arraycopy(v4bytes, 0, v6mapped, 12, 4);
+                    ipAddr = InetAddress.getByAddress(v6mapped);
                     // 前96位是固定的，预先计算出对应的节点索引，只需要搜索后面32位
                     AwdbBufferHolder holder = getBuffer();
                     long nodeCount = awdbMetaData.getNodeCount();
@@ -148,7 +153,7 @@ public class AwdbReader implements AutoCloseable {
                             nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 1);
                         }
                     } else {
-                        ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+                        ByteBuffer buffer = holder.getByteBuffer().duplicate();
                         // 前80位都是0
                         for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
                             nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 0);
@@ -215,7 +220,7 @@ public class AwdbReader implements AutoCloseable {
             }
         } else {
             // 使用 ByteBuffer 副本避免共享访问
-            ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+            ByteBuffer buffer = holder.getByteBuffer().duplicate();
             for (int pl = startBit; pl < bitLength && nodeIndex < nodeCount; pl++) {
                 int b = 0xFF & rawAddr[pl / 8];
                 int bit = 1 & (b >> 7 - (pl % 8));
@@ -277,7 +282,7 @@ public class AwdbReader implements AutoCloseable {
                 return parser.parseData(offset);
             } else {
                 // 使用 ByteBuffer 副本避免共享访问
-                ByteBuffer buffer = holder.getCurrBuffer().duplicate();
+                ByteBuffer buffer = holder.getByteBuffer().duplicate();
                 AwdbDataParser parser = new AwdbDataParser(cache, buffer, awdbMetaData.getBaseOffset());
                 return parser.parseData((int) offset);
             }
@@ -295,7 +300,7 @@ public class AwdbReader implements AutoCloseable {
         if (holder.isLargeFile()) {
             return decodeContentDirectLarge(offset, holder.getLargeFileBuffer());
         } else {
-            return decodeContentDirectSmall(offset, holder.getCurrBuffer());
+            return decodeContentDirectSmall(offset, holder.getByteBuffer());
         }
     }
 

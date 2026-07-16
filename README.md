@@ -10,7 +10,7 @@ www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support 
 <dependency>
     <groupId>com.xenoamess</groupId>
     <artifactId>awdb-java</artifactId>
-    <version>2.0.0</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 

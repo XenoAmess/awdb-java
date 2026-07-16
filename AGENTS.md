@@ -2,12 +2,18 @@
 
 ## Project
 - Fork of https://gitee.com/aiwen_home/awdb-java (see README.md); respect the original copyright & LICENSE when modifying or redistributing.
-- Single-module Maven library: parser for AWDB IP-geolocation files. Public entrypoint is `com.xenoamess.ipplus360.AwdbReader`; `com.xenoamess.example.AwdbApplicationTest` is a demo `main` (also the shade jar's mainClass).
+- Single-module Maven library: parser for AWDB IP-geolocation files. Public entrypoint is `com.xenoamess.ipplus360.AwdbReader`.
+- Since 3.0.0 the fork intentionally breaks API vs upstream (rebrand, fastjson removal, dead-code deletion).
 
 ## Build & verify
-- Java 8 bytecode target. JDK 8 builds via source/target 8; JDK 9+ activates profile `jdk9-plus-release-8` which compiles with `--release 8`. Build: `mvn package` (shade plugin produces a fat jar). Compile check: `mvn compile`.
-- No tests and no lint/typecheck config exist in this repo — don't invent commands for them.
-- CI: `.github/workflows/build.yml` runs `mvn package` on a JDK 8/11/25 matrix (temurin) and uploads the shaded jar as an artifact.
+- Java 8 bytecode target. JDK 8 builds via source/target 8; JDK 9+ activates profile `jdk9-plus-release-8` which compiles with `--release 8`. Build: `mvn package`. Compile check: `mvn compile`.
+- Tests: `mvn test` (JUnit 5). Fixtures are synthetic files solidified at `src/test/resources/test_20260717*.awdb`, produced by `com.xenoamess.ipplus360.fixture.AwdbTestFixture#main` — they encode the format as the code implements it, NOT verified against a real official .awdb (none is publicly available).
+- No lint/typecheck config exists in this repo — don't invent commands for them.
+- CI: `.github/workflows/build.yml` runs `mvn package` (which includes tests) on a JDK 8/11/25 matrix (temurin) and uploads the jar as an artifact.
+
+## Known issues (intentionally left)
+- The small-file parser (`AwdbDataParser`) and large-file parser (`AwdbDataParserLarge`) still have behavior drift (e.g. TEXT length cap, `buffer2Long` returning -1 on error, null-on-error vs throw). Fixing requires a merge that was explicitly postponed.
+- Real-format compatibility is unverified; if a genuine .awdb sample arrives, put it in `src/test/resources` (gitignored if proprietary) and add tests against it.
 
 ## Conventions
 - Package root is `com.xenoamess.*` (groupId `com.xenoamess`); the fork was re-branded from upstream's `io.github.aiwen.*`.

@@ -124,4 +124,17 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- JDK 9+ 时改用 release 8 编译，避免 source/target 8 的弃用警告并锁定 JDK 8 API -->
+        <profile>
+            <id>jdk9-plus-release-8</id>
+            <activation>
+                <jdk>[9,)</jdk>
+            </activation>
+            <properties>
+                <maven.compiler.release>8</maven.compiler.release>
+            </properties>
+        </profile>
+    </profiles>
+
 </project>

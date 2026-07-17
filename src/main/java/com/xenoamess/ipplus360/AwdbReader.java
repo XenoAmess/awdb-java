@@ -373,6 +373,143 @@ public class AwdbReader implements AutoCloseable {
     }
 
     /**
+     * 全量遍历回调
+     */
+    public interface WalkCallback {
+        /**
+         * 每命中一个（前缀, 记录）对调用一次。
+         *
+         * @param address      前缀地址字节（32 位树为 4 字节，128 位树为 16 字节），回调持有副本
+         * @param prefixLength 前缀位数（0 = 全空间）
+         * @param record       记录（与 findIpLocation 返回结构一致：decode1/2 均为映射对象）
+         * @throws IOException 读取失败
+         */
+        void onNetwork(byte[] address, int prefixLength, JsonNode record) throws IOException;
+    }
+
+    /**
+     * 深度优先遍历整棵前缀树，按（前缀, 记录）汇报。
+     * 空子树跳过；同一节点的两个子节点为相同叶子值时合并到当前深度汇报。
+     * 记录按叶子值去重解码。
+     *
+     * @param callback 遍历回调
+     * @throws IOException 读取失败
+     */
+    public void walk(WalkCallback callback) throws IOException {
+        int bitLength = "4".equals(awdbMetaData.getIpVersion()) ? 32 : 128;
+        byte[] address = new byte[bitLength / 8];
+        AwdbBufferHolder holder = getBuffer();
+        Map<Long, JsonNode> recordCache = new HashMap<>();
+        if (holder.isLargeFile()) {
+            walkNodeLarge(holder.getLargeFileBuffer(), 0, address, 0, callback, recordCache);
+        } else {
+            walkNodeSmall(holder.getByteBuffer(), 0, address, 0, callback, recordCache);
+        }
+    }
+
+    private void walkNodeSmall(ByteBuffer buffer, long nodeIndex, byte[] address, int depth,
+                               WalkCallback callback, Map<Long, JsonNode> recordCache) throws IOException {
+        long nodeCount = awdbMetaData.getNodeCount();
+        long left = readNodeIndex(buffer, (int) nodeIndex, 0);
+        long right = readNodeIndex(buffer, (int) nodeIndex, 1);
+        if (left == right && left > nodeCount) {
+            emitRecord(left, address, depth, callback, recordCache);
+            return;
+        }
+        walkChildSmall(buffer, left, address, depth, 0, callback, recordCache);
+        walkChildSmall(buffer, right, address, depth, 1, callback, recordCache);
+    }
+
+    private void walkChildSmall(ByteBuffer buffer, long child, byte[] address, int depth, int bit,
+                                WalkCallback callback, Map<Long, JsonNode> recordCache) throws IOException {
+        long nodeCount = awdbMetaData.getNodeCount();
+        if (child == nodeCount) {
+            return;
+        }
+        setAddressBit(address, depth, bit);
+        if (child > nodeCount) {
+            emitRecord(child, address, depth + 1, callback, recordCache);
+        } else {
+            walkNodeSmall(buffer, child, address, depth + 1, callback, recordCache);
+        }
+        clearAddressBit(address, depth);
+    }
+
+    private void walkNodeLarge(LargeFileBuffer buffer, long nodeIndex, byte[] address, int depth,
+                               WalkCallback callback, Map<Long, JsonNode> recordCache) throws IOException {
+        long nodeCount = awdbMetaData.getNodeCount();
+        long left = readNodeIndexLarge(buffer, nodeIndex, 0);
+        long right = readNodeIndexLarge(buffer, nodeIndex, 1);
+        if (left == right && left > nodeCount) {
+            emitRecord(left, address, depth, callback, recordCache);
+            return;
+        }
+        walkChildLarge(buffer, left, address, depth, 0, callback, recordCache);
+        walkChildLarge(buffer, right, address, depth, 1, callback, recordCache);
+    }
+
+    private void walkChildLarge(LargeFileBuffer buffer, long child, byte[] address, int depth, int bit,
+                                WalkCallback callback, Map<Long, JsonNode> recordCache) throws IOException {
+        long nodeCount = awdbMetaData.getNodeCount();
+        if (child == nodeCount) {
+            return;
+        }
+        setAddressBit(address, depth, bit);
+        if (child > nodeCount) {
+            emitRecord(child, address, depth + 1, callback, recordCache);
+        } else {
+            walkNodeLarge(buffer, child, address, depth + 1, callback, recordCache);
+        }
+        clearAddressBit(address, depth);
+    }
+
+    private void emitRecord(long leaf, byte[] address, int prefixLength,
+                            WalkCallback callback, Map<Long, JsonNode> recordCache) throws IOException {
+        JsonNode record = recordCache.get(leaf);
+        if (record == null && !recordCache.containsKey(leaf)) {
+            record = decodeLeafRecord(leaf);
+            recordCache.put(leaf, record);
+        }
+        if (record != null) {
+            callback.onNetwork(Arrays.copyOf(address, address.length), prefixLength, record);
+        }
+    }
+
+    /**
+     * 按叶子值解码记录，返回结构与 findIpLocation 一致
+     */
+    private JsonNode decodeLeafRecord(long leaf) throws IOException {
+        long pointer = awdbMetaData.getBaseOffset() + leaf - awdbMetaData.getNodeCount() - 10;
+        switch (awdbMetaData.getDecodeType()) {
+            case 1:
+                JsonNode structureResult = decodeContentStructure(pointer);
+                if (structureResult != null && structureResult.isArray()) {
+                    return mapKeyValue(awdbMetaData.getColumns(), structureResult);
+                }
+                return structureResult;
+            case 2:
+                try {
+                    return decodeContentDirect(pointer);
+                } catch (Exception e) {
+                    logger.warn("遍历时解码失败，offset={}", pointer, e);
+                    return null;
+                }
+            default:
+                throw new InvalidAwdbException("Invalid decode type: " + awdbMetaData.getDecodeType());
+        }
+    }
+
+    private static void setAddressBit(byte[] address, int bitIndex, int bit) {
+        if (bit == 1) {
+            address[bitIndex / 8] |= (byte) (0x80 >> (bitIndex % 8));
+        }
+    }
+
+    private static void clearAddressBit(byte[] address, int bitIndex) {
+        address[bitIndex / 8] &= (byte) ~(0x80 >> (bitIndex % 8));
+    }
+
+    /**
      * 获取缓冲区
      */
     private AwdbBufferHolder getBuffer() {

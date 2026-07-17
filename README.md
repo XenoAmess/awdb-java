@@ -7,12 +7,12 @@
 
 www.ipplus360.com 官方支持的解析awdb格式的Java代码(Official support for parsing Java code in AWDB format )。
 
-# maven 依赖引入示例方法（只是一个示例，需要自己获取代码后打包）
+# maven 依赖引入（发布到 Maven Central；available on Maven Central）
 ```xml
 <dependency>
     <groupId>com.xenoamess</groupId>
     <artifactId>awdb-java</artifactId>
-    <version>3.0.0</version>
+    <version>2.0.1-rc1</version>
 </dependency>
 ```
 

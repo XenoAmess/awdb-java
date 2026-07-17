@@ -17,3 +17,4 @@ dependency-reduced-pom.xml
 
 *.log
 docs/dependabot-optimization-notes.md
+docs/coverage-report-notes.md

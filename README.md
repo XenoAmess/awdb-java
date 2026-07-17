@@ -1,5 +1,7 @@
 # awdb-java
 
+[![Coverage](https://img.shields.io/endpoint?url=https://xenoamess.github.io/awdb-java/coverage.json)](https://xenoamess.github.io/awdb-java/report/coverage.html)
+
 > 本项目 fork 自 https://gitee.com/aiwen_home/awdb-java ，尊重原版版权 & License。
 > This project is forked from https://gitee.com/aiwen_home/awdb-java . All rights of the original project are reserved to the original author, and the original copyright & license are respected.
 

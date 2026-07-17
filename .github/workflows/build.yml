@@ -19,10 +19,74 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - name: Build
-        run: mvn -B package
+        run: mvn -B verify
       - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
           name: awdb-java-jdk${{ matrix.java }}
           path: target/awdb-java-*.jar
           if-no-files-found: error
+      - name: Upload coverage report
+        if: matrix.java == 11
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-jdk11
+          path: target/jacoco-report/
+          retention-days: 7
+          if-no-files-found: error
+
+  coverage-pages:
+    name: Deploy Coverage to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report-jdk11
+          path: coverage-report
+
+      - name: Generate coverage badge JSON
+        run: |
+          mkdir -p pages/report
+          python3 - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+
+          # badge 以 INSTRUCTION 计数器为准（与 HTML 报告行覆盖率可能差 1%，属预期）
+          root = ET.parse('coverage-report/jacoco.xml').getroot()
+          pct = 0
+          for c in root.findall('counter'):
+              if c.get('type') == 'INSTRUCTION':
+                  covered = int(c.get('covered'))
+                  missed = int(c.get('missed'))
+                  pct = round(covered / (covered + missed) * 100)
+                  break
+          color = 'green' if pct >= 80 else 'yellow' if pct >= 60 else 'red'
+          with open('pages/coverage.json', 'w') as f:
+              json.dump({
+                  "schemaVersion": 1,
+                  "label": "coverage",
+                  "message": f"{pct}%",
+                  "color": color
+              }, f)
+          print(f"coverage: {pct}% ({color})")
+          PY
+          cp -R coverage-report/* pages/report/
+          # 释放 index.html 槽位，报告入口改名为 coverage.html
+          mv pages/report/index.html pages/report/coverage.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages/
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

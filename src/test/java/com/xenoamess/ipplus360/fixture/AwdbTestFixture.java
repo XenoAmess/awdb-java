@@ -33,12 +33,17 @@ public final class AwdbTestFixture {
     public static final String STRUCTURED_FILE = "test_20260717.awdb";
     public static final String DIRECT_FILE = "test_20260717_decode2.awdb";
     public static final String V6_FILE = "test_20260717_v6.awdb";
+    public static final String MIXED_FILE = "test_20260717_mixed.awdb";
+    public static final String TYPES_FILE = "test_20260717_types.awdb";
 
     private static final int TYPE_ARRAY = 1;
     private static final int TYPE_POINTER = 2;
     private static final int TYPE_STRING = 3;
     private static final int TYPE_TEXT = 4;
     private static final int TYPE_UINT = 5;
+    private static final int TYPE_INT = 6;
+    private static final int TYPE_FLOAT = 7;
+    private static final int TYPE_DOUBLE = 8;
 
     private AwdbTestFixture() {
     }
@@ -73,6 +78,30 @@ public final class AwdbTestFixture {
         out.write(TYPE_UINT);
         out.write(valueBytes);
         writeUnsigned(out, value, valueBytes);
+        return out.toByteArray();
+    }
+
+    /** INT：type + 4 字节大端值（首字节位于控制区 len 位置，见 AwdbDataParser.parseInt） */
+    public static byte[] intValue(int value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(TYPE_INT);
+        writeUnsigned(out, value & 0xFFFFFFFFL, 4);
+        return out.toByteArray();
+    }
+
+    /** FLOAT：type + 4 字节大端位模式（首字节位于 len 位置） */
+    public static byte[] floatValue(float value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(TYPE_FLOAT);
+        writeUnsigned(out, Float.floatToIntBits(value) & 0xFFFFFFFFL, 4);
+        return out.toByteArray();
+    }
+
+    /** DOUBLE：type + 8 字节大端位模式（首字节位于 len 位置） */
+    public static byte[] doubleValue(double value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(TYPE_DOUBLE);
+        writeUnsigned(out, Double.doubleToLongBits(value), 8);
         return out.toByteArray();
     }
 
@@ -137,13 +166,28 @@ public final class AwdbTestFixture {
 
     /* ---------------- 三个固化样本 ---------------- */
 
-    public static byte[] structuredV4() {
-        // 记录 A：结构化样本（202.96.128.86），含 multiAreas
-        byte[] recA = array(
+    /** 记录 A：结构化样本（202.96.128.86），含 multiAreas */
+    static byte[] recStructuredA() {
+        return array(
                 string("中国"), string("广东"), string("广州"), string("电信"),
                 array(
                         array(string("广东"), string("广州"), string("天河")),
                         array(string("广东"), string("深圳"), string("南山"))));
+    }
+
+    /** 记录 B：普通样本（1.2.3.4），multiAreas 为空数组 */
+    static byte[] recStructuredB() {
+        return array(
+                string("美国"), string("加利福尼亚"), string("洛杉矶"), string("Comcast"),
+                array());
+    }
+
+    /** 记录 A 的编码长度（与文件布局同源，供测试定位后续记录偏移） */
+    public static int structuredRecALength() {
+        return recStructuredA().length;
+    }
+
+    public static byte[] structuredV4() {
         // 记录 C：类型覆盖样本（224.0.0.9）：STRING / TEXT / UINT / POINTER(->记录A) / 空数组
         byte[] recC = array(
                 string("类型样本"),
@@ -151,10 +195,9 @@ public final class AwdbTestFixture {
                 uint(65535, 2),
                 pointer(0, 3),
                 array());
-        // 记录 B：普通样本（1.2.3.4），multiAreas 为空数组
-        byte[] recB = array(
-                string("美国"), string("加利福尼亚"), string("洛杉矶"), string("Comcast"),
-                array());
+
+        byte[] recA = recStructuredA();
+        byte[] recB = recStructuredB();
 
         int nodeCount = 4;
         int offA = 0;
@@ -237,12 +280,103 @@ public final class AwdbTestFixture {
         return out.toByteArray();
     }
 
+    /**
+     * ip_version=4_6 混合库：树内含 ::ffff:0/96 前缀链（80 个 0 + 16 个 1），
+     * v4 记录挂在链尾，v6 记录挂在 8000::/1。
+     * 命中：v4 202.96.128.86 / 1.2.3.4，v6 8001::x；未命中：v4 64.x/128.x，v6 ::1。
+     */
+    public static byte[] mixedV46() {
+        byte[] recA = recStructuredA();
+        byte[] recB = recStructuredB();
+        byte[] recC = array(
+                string("中国"), string("上海"), string("上海"), string("IPv6专线"),
+                array());
+
+        int nodeCount = 101;
+        int offA = 0;
+        int offB = recA.length;
+        int offC = recA.length + recB.length;
+        long[] children = new long[nodeCount * 2];
+        // node 0: 0 -> 链, 1 -> v6 记录 C（8000::/1）
+        children[0] = 1;
+        children[1] = leaf(nodeCount, offC);
+        // nodes 1..79: 0 -> 下一链节点, 1 -> 未命中
+        for (int i = 1; i < 80; i++) {
+            children[i * 2] = i + 1;
+            children[i * 2 + 1] = nodeCount;
+        }
+        // nodes 80..95: 0 -> 未命中, 1 -> 下一链节点
+        for (int i = 80; i < 96; i++) {
+            children[i * 2] = nodeCount;
+            children[i * 2 + 1] = i + 1;
+        }
+        // node 96: v4 首位 0 -> node97, 1 -> node99
+        children[96 * 2] = 97;
+        children[96 * 2 + 1] = 99;
+        // node 97: 0 -> B, 1 -> 未命中
+        children[97 * 2] = leaf(nodeCount, offB);
+        children[97 * 2 + 1] = nodeCount;
+        // node 98: 未使用占位
+        children[98 * 2] = nodeCount;
+        children[98 * 2 + 1] = nodeCount;
+        // node 99: 0 -> 未命中, 1 -> A
+        children[99 * 2] = nodeCount;
+        children[99 * 2 + 1] = leaf(nodeCount, offA);
+        // node 100: 未使用占位
+        children[100 * 2] = nodeCount;
+        children[100 * 2 + 1] = nodeCount;
+
+        String meta = "{"
+                + "\"node_count\":" + nodeCount + ","
+                + "\"ip_version\":\"4_6\","
+                + "\"decode_type\":1,"
+                + "\"byte_len\":4,"
+                + "\"languages\":\"CN\","
+                + "\"file_name\":\"" + MIXED_FILE + "\","
+                + "\"create_time\":\"2026-07-17\","
+                + "\"company_id\":\"xenoamess-test\","
+                + "\"columns\":[\"country\",\"province\",\"city\",\"isp\",\"multiAreas\",[\"prov\",\"city\",\"district\"]]"
+                + "}";
+        return build(meta, nodeCount, 4, children, recA, recB, recC);
+    }
+
+    /**
+     * 数值类型覆盖库：flat columns（触发 mapKeyValue 的 == 分支），
+     * 记录含 INT/FLOAT/DOUBLE/UINT/STRING。任意 IP 均命中同一记录。
+     */
+    public static byte[] typesV4() {
+        byte[] rec = array(
+                intValue(-1),
+                floatValue(1.5f),
+                doubleValue(-2.5),
+                uint(65535, 2),
+                string("x"));
+
+        int nodeCount = 1;
+        long[] children = {leaf(nodeCount, 0), leaf(nodeCount, 0)};
+
+        String meta = "{"
+                + "\"node_count\":" + nodeCount + ","
+                + "\"ip_version\":\"4\","
+                + "\"decode_type\":1,"
+                + "\"byte_len\":4,"
+                + "\"languages\":\"CN\","
+                + "\"file_name\":\"" + TYPES_FILE + "\","
+                + "\"create_time\":\"2026-07-17\","
+                + "\"company_id\":\"xenoamess-test\","
+                + "\"columns\":[\"i\",\"f\",\"d\",\"u\",\"s\"]"
+                + "}";
+        return build(meta, nodeCount, 4, children, rec);
+    }
+
     public static void main(String[] args) throws IOException {
         Path dir = Paths.get(args.length > 0 ? args[0] : "src/test/resources");
         Files.createDirectories(dir);
         write(dir.resolve(STRUCTURED_FILE), structuredV4());
         write(dir.resolve(DIRECT_FILE), directV4());
         write(dir.resolve(V6_FILE), directV6());
+        write(dir.resolve(MIXED_FILE), mixedV46());
+        write(dir.resolve(TYPES_FILE), typesV4());
     }
 
     private static void write(Path path, byte[] bytes) throws IOException {

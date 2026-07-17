@@ -128,20 +128,21 @@ public class AwdbReader implements AutoCloseable {
 
         long nodeIndex = 0;
         int startBit = 0;
+        byte[] rawAddr = ipAddr.getAddress();
         if (mix.equals(ipVersion)) {
-            if (ipAddr.getAddress().length == 4) {
-                // 处理IPv4地址转换：显式构造 ::ffff:a.b.c.d 的16字节形式，
-                // 避免文本形式被 JDK 归一化回 Inet4Address
+            if (rawAddr.length == 4) {
+                // 处理IPv4地址转换：直接构造 ::ffff:a.b.c.d 的16字节形式。
+                // 不能经 InetAddress 往返——现代 JDK 会把 mapped 地址归一化回
+                // Inet4Address（getByName 和 getByAddress 均如此），导致位序错乱。
+                byte[] v6mapped = new byte[16];
+                v6mapped[10] = (byte) 0xFF;
+                v6mapped[11] = (byte) 0xFF;
+                System.arraycopy(rawAddr, 0, v6mapped, 12, 4);
+                rawAddr = v6mapped;
+                // 前96位是固定的，预先计算出对应的节点索引，只需要搜索后面32位
+                AwdbBufferHolder holder = getBuffer();
+                long nodeCount = awdbMetaData.getNodeCount();
                 try {
-                    byte[] v4bytes = ipAddr.getAddress();
-                    byte[] v6mapped = new byte[16];
-                    v6mapped[10] = (byte) 0xFF;
-                    v6mapped[11] = (byte) 0xFF;
-                    System.arraycopy(v4bytes, 0, v6mapped, 12, 4);
-                    ipAddr = InetAddress.getByAddress(v6mapped);
-                    // 前96位是固定的，预先计算出对应的节点索引，只需要搜索后面32位
-                    AwdbBufferHolder holder = getBuffer();
-                    long nodeCount = awdbMetaData.getNodeCount();
                     if (holder.isLargeFile()) {
                         LargeFileBuffer buffer = holder.getLargeFileBuffer();
                         // 前80位都是0
@@ -163,20 +164,17 @@ public class AwdbReader implements AutoCloseable {
                             nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 1);
                         }
                     }
-                    // 从第96位开始搜索后面的32位
-                    startBit = 96;
-                } catch (UnknownHostException e) {
-                    logger.warn("IPv4-mapped地址转换失败: {}", ipAddr, e);
-                    return OBJECT_MAPPER.createObjectNode();
                 } catch (IOException e) {
                     logger.warn("读取节点索引失败", e);
                     return OBJECT_MAPPER.createObjectNode();
                 }
+                // 从第96位开始搜索后面的32位
+                startBit = 96;
             }
         }
 
 
-        nodeIndex = findTreeIndex(ipAddr, nodeIndex, startBit);
+        nodeIndex = findTreeIndex(rawAddr, nodeIndex, startBit);
         if (nodeIndex <= 0) {
             return OBJECT_MAPPER.createObjectNode();
         }
@@ -204,9 +202,8 @@ public class AwdbReader implements AutoCloseable {
     /**
      * 查找树形索引
      */
-    private long findTreeIndex(InetAddress ipAddr, long nodeIndex, int startBit) throws IOException {
+    private long findTreeIndex(byte[] rawAddr, long nodeIndex, int startBit) throws IOException {
         AwdbBufferHolder holder = getBuffer();
-        byte[] rawAddr = ipAddr.getAddress();
 
         int bitLength = rawAddr.length * 8;
         long nodeCount = awdbMetaData.getNodeCount();

@@ -16,3 +16,4 @@ dependency-reduced-pom.xml
 .vscode/
 
 *.log
+docs/dependabot-optimization-notes.md

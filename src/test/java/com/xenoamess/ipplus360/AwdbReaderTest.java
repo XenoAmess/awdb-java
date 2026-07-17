@@ -100,16 +100,14 @@ class AwdbReaderTest {
     }
 
     @Test
-    void stringAndInetAddressApiShapes() throws IOException {
+    void stringAndInetAddressApiEquivalent() throws IOException {
         try (AwdbReader reader = AwdbReader.open(resource(AwdbTestFixture.STRUCTURED_FILE),
                 AwdbNoCacheImpl.getInstance(), FileOpenMode.MEMORY)) {
-            // String API 返回 key-value 映射对象；InetAddress API 返回原始记录数组
+            // 两个入口 API 返回相同的 key-value 映射对象
             JsonNode byString = reader.findIpLocation("202.96.128.86");
             JsonNode byAddr = reader.findIpLocation(InetAddress.getByName("202.96.128.86"));
-            assertEquals("中国", byString.get("country").asText());
-            assertTrue(byAddr.isArray());
-            assertEquals("中国", byAddr.get(0).asText());
-            assertEquals("电信", byAddr.get(3).asText());
+            assertEquals(byString, byAddr);
+            assertEquals("中国", byAddr.get("country").asText());
         }
     }
 

@@ -93,13 +93,7 @@ public class AwdbReader implements AutoCloseable {
         }
 
         try {
-            InetAddress ipAddr = InetAddress.getByName(ipStr.trim());
-            JsonNode valuesJson = findIpLocation(ipAddr);
-            // 仅原始数组结果需要做 key-value 映射；空节点、decodeType=2 已映射的对象直接返回
-            if (valuesJson == null || !valuesJson.isArray()) {
-                return valuesJson;
-            }
-            return mapKeyValue(awdbMetaData.getColumns(), valuesJson);
+            return findIpLocation(InetAddress.getByName(ipStr.trim()));
         } catch (UnknownHostException e) {
             logger.warn("无法解析的IP地址: {}", ipStr, e);
             return null;
@@ -183,10 +177,14 @@ public class AwdbReader implements AutoCloseable {
         switch (awdbMetaData.getDecodeType()) {
             case 1:
                 JsonNode structureResult = decodeContentStructure(pointer);
-                if (structureResult != null) {
-                    return structureResult;
+                if (structureResult == null) {
+                    return OBJECT_MAPPER.createObjectNode();
                 }
-                return OBJECT_MAPPER.createObjectNode();
+                // 原始数组记录在此做 key-value 映射，两个入口 API 返回结构一致
+                if (structureResult.isArray()) {
+                    return mapKeyValue(awdbMetaData.getColumns(), structureResult);
+                }
+                return structureResult;
             case 2:
                 try {
                     return decodeContentDirect(pointer);

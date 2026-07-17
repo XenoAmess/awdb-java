@@ -8,6 +8,8 @@
 ## Build & verify
 - Java 8 bytecode target. JDK 8 builds via source/target 8; JDK 9+ activates profile `jdk9-plus-release-8` which compiles with `--release 8`. Build: `mvn package`. Compile check: `mvn compile`.
 - Tests: `mvn test` (JUnit 5). Fixtures are synthetic files solidified at `src/test/resources/test_20260717*.awdb`, produced by `com.xenoamess.ipplus360.fixture.AwdbTestFixture#main` — they encode the format as the code implements it, NOT verified against a real official .awdb (none is publicly available).
+- The >2GB large-file path is tested end-to-end via Linux sparse files (`AwdbReaderSparseFileTest`): positioned-write extends the file past 2GB without disk cost (`FileChannel.truncate` cannot extend — it only shrinks). Tests assume Linux via JUnit `assumeTrue`.
+- Gotcha: modern JDKs normalize `::ffff:a.b.c.d` to `Inet4Address` via BOTH `InetAddress.getByName` and `getByAddress` — never round-trip IPv4-mapped addresses through `InetAddress`; build the 16 raw bytes directly (see `AwdbReader.findIpLocation`).
 - No lint/typecheck config exists in this repo — don't invent commands for them.
 - CI: `.github/workflows/build.yml` runs `mvn verify` (which includes tests + JaCoCo report) on a JDK 8/11/25 matrix (temurin) and uploads the jar as an artifact. The `coverage-pages` job (master only) deploys the JDK 11 leg's JaCoCo report to GitHub Pages and feeds the shields.io endpoint badge in README; report entry is `report/coverage.html` (index.html slot deliberately freed). Keep `coverage-pages` OUT of any required check (Pitfall 11).
 - `.github/workflows/auto-merge.yml` approves + auto-merges dependabot PRs (patch/minor always, major only for github-actions). MYTOKEN lives in the **dependabot** secret namespace, not actions (Pitfall 16).

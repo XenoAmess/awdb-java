@@ -28,6 +28,11 @@ public class AwdbReader implements AutoCloseable {
     private final AwdbBufferHolder bufferRef;
     private final AwdbNodeCache cache;
     private final AwdbMetaData awdbMetaData;
+    /**
+     * 4_6 混合库 ::ffff:0/96 前缀的预走结果（构造期计算一次）；
+     * 非 4_6 库为 -1。避免每次 v4 查询重走 96 位前缀。
+     */
+    private final long ipv4StartNode;
 
     /**
      * 私有构造函数，供内部使用
@@ -49,6 +54,39 @@ public class AwdbReader implements AutoCloseable {
             AwdbDataParser awdbDataParser = new AwdbDataParser(this.cache, buffer.duplicate());
             this.awdbMetaData = awdbDataParser.parseMeta(metaLen);
         }
+
+        if ("4_6".equals(this.awdbMetaData.getIpVersion())) {
+            this.ipv4StartNode = prewalkIpv4Start();
+        } else {
+            this.ipv4StartNode = -1;
+        }
+    }
+
+    /**
+     * 预走 ::ffff:0/96 前缀（前 80 位 0 + 接下来 16 位 1），返回链尾节点索引
+     */
+    private long prewalkIpv4Start() throws IOException {
+        AwdbBufferHolder holder = getBuffer();
+        long nodeCount = awdbMetaData.getNodeCount();
+        long nodeIndex = 0;
+        if (holder.isLargeFile()) {
+            LargeFileBuffer buffer = holder.getLargeFileBuffer();
+            for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
+                nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 0);
+            }
+            for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
+                nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 1);
+            }
+        } else {
+            ByteBuffer buffer = holder.getByteBuffer().duplicate();
+            for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
+                nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 0);
+            }
+            for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
+                nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 1);
+            }
+        }
+        return nodeIndex;
     }
 
 
@@ -133,36 +171,8 @@ public class AwdbReader implements AutoCloseable {
                 v6mapped[11] = (byte) 0xFF;
                 System.arraycopy(rawAddr, 0, v6mapped, 12, 4);
                 rawAddr = v6mapped;
-                // 前96位是固定的，预先计算出对应的节点索引，只需要搜索后面32位
-                AwdbBufferHolder holder = getBuffer();
-                long nodeCount = awdbMetaData.getNodeCount();
-                try {
-                    if (holder.isLargeFile()) {
-                        LargeFileBuffer buffer = holder.getLargeFileBuffer();
-                        // 前80位都是0
-                        for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
-                            nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 0);
-                        }
-                        // 接下来16位都是1
-                        for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
-                            nodeIndex = readNodeIndexLarge(buffer, nodeIndex, 1);
-                        }
-                    } else {
-                        ByteBuffer buffer = holder.getByteBuffer().duplicate();
-                        // 前80位都是0
-                        for (int i = 0; i < 80 && nodeIndex < nodeCount; i++) {
-                            nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 0);
-                        }
-                        // 接下来16位都是1
-                        for (int i = 0; i < 16 && nodeIndex < nodeCount; i++) {
-                            nodeIndex = readNodeIndex(buffer, (int) nodeIndex, 1);
-                        }
-                    }
-                } catch (IOException e) {
-                    logger.warn("读取节点索引失败", e);
-                    return OBJECT_MAPPER.createObjectNode();
-                }
-                // 从第96位开始搜索后面的32位
+                // 前96位前缀已在构造期预走（ipv4StartNode），只搜索后面32位
+                nodeIndex = ipv4StartNode;
                 startBit = 96;
             }
         }

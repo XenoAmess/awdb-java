@@ -65,7 +65,14 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.14.4</version>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- 官方 mmdb reader，仅作自研 writer 的校验 oracle（2.1.0 是最后的 Java 8 兼容版） -->
+        <dependency>
+            <groupId>com.maxmind.db</groupId>
+            <artifactId>maxmind-db</artifactId>
+            <version>2.1.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

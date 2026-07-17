@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.xenoamess.ipplus360.entity.AwdbMetaData;
 import com.xenoamess.ipplus360.enumerate.FileOpenMode;
-import com.xenoamess.ipplus360.exception.AwdbCloseException;
+import com.xenoamess.ipplus360.exception.InvalidAwdbException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -237,11 +237,18 @@ public class AwdbReader implements AutoCloseable {
     /**
      * 读取节点索引（小文件）
      */
-    private int readNodeIndex(ByteBuffer buffer, int nodeIndex, int bit) {
-        int offset = nodeIndex * awdbMetaData.getByteLen() * 2 + bit * awdbMetaData.getByteLen() + (int) awdbMetaData.getStartLength();
+    private int readNodeIndex(ByteBuffer buffer, int nodeIndex, int bit) throws IOException {
+        // 用 long 计算偏移：文件接近 2GB 时 nodeIndex*byteLen*2 按 int 会溢出为负
+        long offset = (long) nodeIndex * awdbMetaData.getByteLen() * 2
+                + (long) bit * awdbMetaData.getByteLen()
+                + awdbMetaData.getStartLength();
+        if (offset < 0 || offset + awdbMetaData.getByteLen() > buffer.capacity()) {
+            throw new InvalidAwdbException("Node offset " + offset + " with length "
+                    + awdbMetaData.getByteLen() + " out of bounds [0, " + buffer.capacity() + "]");
+        }
         // 创建buffer副本，设置offset，不修改原buffer的position，线程安全
         ByteBuffer bufferCopy = buffer.duplicate();
-        bufferCopy.position(offset);
+        bufferCopy.position((int) offset);
         return AwdbDataParser.buffer2Integer(bufferCopy, 0, awdbMetaData.getByteLen());
     }
 
@@ -310,6 +317,9 @@ public class AwdbReader implements AutoCloseable {
         bufferCopy.position((int) offset);
 
         int dataLen = AwdbDataParser.buffer2Integer(bufferCopy, 0, 4);
+        if (dataLen < 0 || dataLen > bufferCopy.remaining()) {
+            throw new InvalidAwdbException("Invalid data length " + dataLen + " at offset " + offset);
+        }
         byte[] data = new byte[dataLen];
         bufferCopy.get(data);
         String[] values = new String(data, "UTF-8").split("\t");
@@ -328,33 +338,36 @@ public class AwdbReader implements AutoCloseable {
      */
     private JsonNode decodeContentDirectLarge(long offset, LargeFileBuffer buffer) throws IOException {
         long position = buffer.position();
-        buffer.position(offset);
+        try {
+            buffer.position(offset);
 
-        byte[] lenBytes = new byte[4];
-        buffer.get(lenBytes);
-        int dataLen = (lenBytes[0] << 24) | ((lenBytes[1] & 0xFF) << 16) | ((lenBytes[2] & 0xFF) << 8) | (lenBytes[3] & 0xFF);
+            byte[] lenBytes = new byte[4];
+            buffer.get(lenBytes);
+            int dataLen = (lenBytes[0] << 24) | ((lenBytes[1] & 0xFF) << 16) | ((lenBytes[2] & 0xFF) << 8) | (lenBytes[3] & 0xFF);
+            if (dataLen < 0 || dataLen > buffer.remaining()) {
+                throw new InvalidAwdbException("Invalid data length " + dataLen + " at offset " + offset);
+            }
 
-        byte[] dataBytes = new byte[dataLen];
-        buffer.get(dataBytes);
-        String[] values = new String(dataBytes, "UTF-8").split("\t");
-        buffer.position(position);
+            byte[] dataBytes = new byte[dataLen];
+            buffer.get(dataBytes);
+            String[] values = new String(dataBytes, "UTF-8").split("\t");
 
-        Map<String, JsonNode> result = new HashMap<>(awdbMetaData.getColumns().size());
-        for (int i = 0; i < awdbMetaData.getColumns().size(); i++) {
-            String value = values.length - i > 0 ? values[i] : "";
-            result.put((String) awdbMetaData.getColumns().get(i), new TextNode(value));
+            Map<String, JsonNode> result = new HashMap<>(awdbMetaData.getColumns().size());
+            for (int i = 0; i < awdbMetaData.getColumns().size(); i++) {
+                String value = values.length - i > 0 ? values[i] : "";
+                result.put((String) awdbMetaData.getColumns().get(i), new TextNode(value));
+            }
+
+            return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(result));
+        } finally {
+            buffer.position(position);
         }
-
-        return new ObjectNode(OBJECT_MAPPER.getNodeFactory(), Collections.unmodifiableMap(result));
     }
 
     /**
      * 获取缓冲区
      */
-    private AwdbBufferHolder getBuffer() throws AwdbCloseException {
-        if (bufferRef == null) {
-            throw new AwdbCloseException();
-        }
+    private AwdbBufferHolder getBuffer() {
         return bufferRef;
     }
 
